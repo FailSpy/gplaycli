@@ -74,7 +74,7 @@ class GPlaycli:
 	download(), search().
 	"""
 
-	def __init__(self, args=None, config_file=None):
+	def __init__(self, args=None, command=None, config_file=None):
 		# no config file given, look for one
 		if config_file is None:
 			# default local user configs
@@ -128,7 +128,7 @@ class GPlaycli:
 			logger.setLevel(logging.INFO)
 		logger.info('GPlayCli version %s', __version__)
 		logger.info('Configuration file is %s', config_file)
-		if args.command == "get":
+		if command == "get":
 			if args.append_version is not None:
 				self.append_version = args.append_version
 
@@ -724,13 +724,36 @@ class GPlaycli:
 
 	########## End internal methods ##########
 
+def deal_with_deprecated_args():
+	parser = argparse.ArgumentParser(description="A Google Play Store Apk downloader and manager for command line")
+	parser.add_argument('-V',  '--version',				help="Print version number and exit", action='store_true')
+	parser.add_argument('-v',  '--verbose',				help="Be verbose", action='store_true')
+	parser.add_argument('-s',  '--search',				help="Search the given string in Google Play Store", metavar="SEARCH")
+	parser.add_argument('-d',  '--download',			help="Download the Apps that map given AppIDs", metavar="AppID", nargs="+")
+	parser.add_argument('-y',  '--yes',					help="Say yes to all prompted questions", action='store_true')
+	parser.add_argument('-l',  '--list',				help="List APKS in the given folder, with details", metavar="FOLDER")
+	parser.add_argument('-P',  '--paid',				help="Also search for paid apps", action='store_true', default=False)
+	parser.add_argument('-av', '--append-version',		help="Append versionstring to APKs when downloading", action='store_true')
+	parser.add_argument('-a',  '--additional-files',	help="Enable the download of additional files", action='store_true', default=False)
+	parser.add_argument('-F',  '--file',				help="Load packages to download from file, one package per line", metavar="FILE")
+	parser.add_argument('-u',  '--update',				help="Update all APKs in a given folder", metavar="FOLDER")
+	parser.add_argument('-f',  '--folder',				help="Where to put the downloaded Apks, only for -d command", metavar="FOLDER", nargs=1, default=['.'])
+	parser.add_argument('-dc', '--device-codename',		help="The device codename to fake", choices=GooglePlayAPI.getDevicesCodenames(), metavar="DEVICE_CODENAME")
+	parser.add_argument('-t',  '--token',				help="Instead of classical credentials, use the tokenize version", action='store_true', default=None)
+	parser.add_argument('-tu', '--token-url',			help="Use the given tokendispenser URL to retrieve a token", metavar="TOKEN_URL")
+	parser.add_argument('-ts', '--token-str',			help="Supply token string by yourself, need to supply GSF_ID at the same time", metavar="TOKEN_STR")
+	parser.add_argument('-g',  '--gsfid',				help="Supply GSF_ID by yourself, need to supply token string at the same time", metavar="GSF_ID")
+	parser.add_argument('-c',  '--config',				help="Use a different config file than gplaycli.conf", metavar="CONF_FILE", nargs=1)
+	parser.add_argument('-p',  '--progress',			help="Prompt a progress bar while downloading packages", action='store_true')
+	parser.add_argument('-L',  '--log',					help="Enable logging of apps status in separate logging files", action='store_true', default=False)
+
+	return parser.parse_args()
 
 def main():
 	"""
 	Main function.
 	Parse command line arguments
 	"""
-	print("AAAA")
 	parser = argparse.ArgumentParser(description="A Google Play Store Apk downloader and manager for command line")
 
 	parser.add_argument('-V',  '--version',				help="Print version number and exit", action='store_true')
@@ -745,7 +768,7 @@ def main():
 	parser.add_argument('-L',  '--log',					help="Enable logging of apps status in separate logging files", action='store_true', default=False)
 
 	subparsers = parser.add_subparsers(help='',dest="command")
-	browse = subparsers.add_parser('query',help="Querying for content")
+	browse = subparsers.add_parser('query',			help="Querying for content")
 	browse.add_argument('search',						help="Search the given string in Google Play Store", nargs="?", metavar="SEARCH")
 	browse.add_argument('-P',  '--paid',				help="Also search for paid apps", action='store_true', default=False)
 	browse.add_argument('-l',  '--list',				help="List APKS in the given folder, with details", metavar="FOLDER")
@@ -754,7 +777,7 @@ def main():
 	browse.add_argument('-n',  '--results',				help="If querying for apps, up to how many results to return (Default: 20, Max: 100)", default=20, type=int)
 	browse.add_argument('-p',  '--page',				help="Page number (only affects querying categories/subcategories, not search)", default=1, type=int)
 
-	content = subparsers.add_parser('get',help="Getting content from Google Play")
+	content = subparsers.add_parser('get',			help="Getting content from Google Play")
 	content.add_argument('-d',  '--download',			help="Download the Apps that map given AppIDs", metavar="AppID", nargs="+")
 	content.add_argument('-av', '--append-version',		help="Append versionstring to APKs when downloading", action='store_true')
 	content.add_argument('-a',  '--additional-files',	help="Enable the download of additional files", action='store_true', default=False)
@@ -765,15 +788,27 @@ def main():
 
 	if len(sys.argv) < 3:
 		sys.argv.append("-h")
-
-	args = parser.parse_args()
+	
+	command = ""
+	
+	if "-h" not in sys.argv and "get" not in sys.argv and "query" not in sys.argv:
+		args = deal_with_deprecated_args()
+		
+		if args.download or args.file or args.update:
+			logger.warning("Using DEPRECATED arguments, please use the new 'query' or 'get' sub-commands")
+			command = "get"
+		elif args.search or args.list:
+			logger.warning("Using DEPRECATED arguments, please use the new 'query' or 'get' sub-commands")
+			command = "query"
+	else:
+		args = parser.parse_args()
 
 	if args.version:
 		print(__version__)
 		return
 
-	cli = GPlaycli(args, args.config)
-	if args.command == "query":
+	cli = GPlaycli(args, command, args.config)
+	if command == "query":
 		if args.search:
 			cli.verbose = True
 			cli.search("".join(args.search), not args.paid)
@@ -792,7 +827,7 @@ def main():
 
 		elif args.list:
 			print(util.list_folder_apks(args.list))
-	elif args.command == "get":
+	elif command == "get":
 		if args.update:
 			cli.prepare_analyse_apks()
 			return
