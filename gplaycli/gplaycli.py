@@ -360,7 +360,7 @@ class GPlaycli:
 		"""
 		if self.verbose:
 			logger.setLevel(logging.INFO)
-		if(len(category) == 0 or category == None):
+		if(category == None or len(category) == 0):
 			obj = self.api.browse(None,None)
 			if(len(obj['category']) > 0):
 				print("Category ID")
@@ -381,7 +381,7 @@ class GPlaycli:
 			
 
 	@hooks.connected
-	def list_category_apps(self, category, subcategory, free_only=True, include_headers=True):
+	def list_category_apps(self, category, subcategory, query_amt, page, free_only=True, include_headers=True):
 		"""
 		List top apps found in category & subcategory
 
@@ -389,10 +389,30 @@ class GPlaycli:
 		"""
 		if self.verbose:
 			logger.setLevel(logging.INFO)
+		
+		if(page < 0):
+			logger.error("'--page' can't be less than 1")
+			return None
+		elif(query_amt < 1):
+			logger.error("'--results' can't be less than 1")
+			return None
+		
 		category = category.upper()
 		subcategory = subcategory.lower()
+		offset = page*query_amt
+		if(offset >= 100):
+			# Actual Google Play limit is 500, but GPApi offset is broken, so we're limited to 100.
+			logger.info("No more pages")
+			return
+		if(offset+query_amt > 100):
+			# Get whatever apps are remaining in the possible range
+			query_amt = 100-offset
 		try:
-			results = self.api.list(category,subcategory)
+			#results = self.api.list(category,subcategory,query_amt,offset)
+			results = self.api.list(category,subcategory,query_amt+offset,0)
+			# Hacky fix for broken offset in GP API, to simulate pages:
+			if(offset > 0):
+				results = results[offset:len(results)]
 		except IndexError:
 			results = []
 		all_results = self.format_app_results(results,free_only,include_headers)
@@ -641,7 +661,7 @@ class GPlaycli:
 						continue
 			else:
 				# This is for the api.list() returned format, as opposed to api.search() returned format
-				if 'docId' in doc and 'details' in doc:
+				if 'docid' in doc and 'details' in doc:
 					# skip that app if it not free
 					# or if it's beta (pre-registration)
 					if ('offer' not in doc  # beta apps (pre-registration)
@@ -710,6 +730,7 @@ def main():
 	Main function.
 	Parse command line arguments
 	"""
+	print("AAAA")
 	parser = argparse.ArgumentParser(description="A Google Play Store Apk downloader and manager for command line")
 
 	parser.add_argument('-V',  '--version',				help="Print version number and exit", action='store_true')
@@ -725,11 +746,13 @@ def main():
 
 	subparsers = parser.add_subparsers(help='',dest="command")
 	browse = subparsers.add_parser('query',help="Querying for content")
-	browse.add_argument('-s',  '--search',				help="Search the given string in Google Play Store", metavar="SEARCH")
+	browse.add_argument('search',						help="Search the given string in Google Play Store", nargs="?", metavar="SEARCH")
 	browse.add_argument('-P',  '--paid',				help="Also search for paid apps", action='store_true', default=False)
 	browse.add_argument('-l',  '--list',				help="List APKS in the given folder, with details", metavar="FOLDER")
-	browse.add_argument('-C',  '--category',			help="List apps in category & subcategory", nargs=2, metavar=("CATEGORY_ID","SUBCATEGORY"))
-	browse.add_argument('-Cl', '--category-list',		help="List subcategories for category, or all categories if no category listed", nargs='?', metavar="CATEGORY_ID", const='', default=None)
+	browse.add_argument('-c',  '--category',			help="List categories, or select category for further querying", nargs="?", metavar="CATEGORY_ID",const="")
+	browse.add_argument('-s',  '--subcat',				help="If paired with --category, outputs available apps in subcategory", metavar="SUBCATEGORY")
+	browse.add_argument('-n',  '--results',				help="If querying for apps, up to how many results to return (Default: 20, Max: 100)", default=20, type=int)
+	browse.add_argument('-p',  '--page',				help="Page number (only affects querying categories/subcategories, not search)", default=1, type=int)
 
 	content = subparsers.add_parser('get',help="Getting content from Google Play")
 	content.add_argument('-d',  '--download',			help="Download the Apps that map given AppIDs", metavar="AppID", nargs="+")
@@ -753,19 +776,22 @@ def main():
 	if args.command == "query":
 		if args.search:
 			cli.verbose = True
-			cli.search(args.search, not args.paid)
+			cli.search("".join(args.search), not args.paid)
 
-		if args.category_list is not None:
+		elif args.category != None and args.subcat is None:
 			cli.verbose = True
-			cli.list_categories(args.category_list)
+			cli.list_categories(args.category)
 		
-		elif args.category:
+		elif args.category != None and args.subcat:
 			cli.verbose = True
-			cli.list_category_apps(args.category[0],args.category[1], not args.paid)
+			cli.list_category_apps(args.category,args.subcat,args.results,args.page-1,not args.paid)
+		
+		elif args.subcat:
+			logger.error("Need both category and subcategory, not just subcat")
+			exit(1)
 
-		if args.list:
+		elif args.list:
 			print(util.list_folder_apks(args.list))
-	
 	elif args.command == "get":
 		if args.update:
 			cli.prepare_analyse_apks()
