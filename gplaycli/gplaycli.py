@@ -650,7 +650,7 @@ class GPlaycli:
 						):
 						continue
 					all_results.append(GPlaycli.decode_app_structure(doc,not free_only))
-		if(len(all_results) == 0):
+		if(len(all_results) <= 1):
 			# No results
 			return None
 		# Print a nice table
