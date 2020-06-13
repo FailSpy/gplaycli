@@ -128,15 +128,18 @@ class GPlaycli:
 			logger.setLevel(logging.INFO)
 		logger.info('GPlayCli version %s', __version__)
 		logger.info('Configuration file is %s', config_file)
+		if args.command == "get":
+			if args.append_version is not None:
+				self.append_version = args.append_version
 
-		if args.append_version is not None:
-			self.append_version = args.append_version
+			if args.progress is not None:
+				self.progress_bar = args.progress
 
-		if args.progress is not None:
-			self.progress_bar = args.progress
+			if args.update is not None:
+				self.download_folder = args.update
 
-		if args.update is not None:
-			self.download_folder = args.update
+			if args.additional_files is not None:
+				self.addfiles_enable = args.additional_files
 
 		if args.log is not None:
 			self.logging_enable = args.log
@@ -144,9 +147,6 @@ class GPlaycli:
 		if args.device_codename is not None:
 			self.device_codename = args.device_codename
 		logger.info('Device is %s', self.device_codename)
-
-		if args.additional_files is not None:
-			self.addfiles_enable = args.additional_files
 
 		if args.token is not None:
 			self.token_enable = args.token
@@ -711,30 +711,36 @@ def main():
 	Parse command line arguments
 	"""
 	parser = argparse.ArgumentParser(description="A Google Play Store Apk downloader and manager for command line")
+
 	parser.add_argument('-V',  '--version',				help="Print version number and exit", action='store_true')
 	parser.add_argument('-v',  '--verbose',				help="Be verbose", action='store_true')
-	parser.add_argument('-s',  '--search',				help="Search the given string in Google Play Store", metavar="SEARCH")
-	parser.add_argument('-d',  '--download',			help="Download the Apps that map given AppIDs", metavar="AppID", nargs="+")
 	parser.add_argument('-y',  '--yes',					help="Say yes to all prompted questions", action='store_true')
-	parser.add_argument('-l',  '--list',				help="List APKS in the given folder, with details", metavar="FOLDER")
-	parser.add_argument('-P',  '--paid',				help="Also search for paid apps", action='store_true', default=False)
-	parser.add_argument('-av', '--append-version',		help="Append versionstring to APKs when downloading", action='store_true')
-	parser.add_argument('-a',  '--additional-files',	help="Enable the download of additional files", action='store_true', default=False)
-	parser.add_argument('-F',  '--file',				help="Load packages to download from file, one package per line", metavar="FILE")
-	parser.add_argument('-u',  '--update',				help="Update all APKs in a given folder", metavar="FOLDER")
-	parser.add_argument('-f',  '--folder',				help="Where to put the downloaded Apks, only for -d command", metavar="FOLDER", nargs=1, default=['.'])
 	parser.add_argument('-dc', '--device-codename',		help="The device codename to fake", choices=GooglePlayAPI.getDevicesCodenames(), metavar="DEVICE_CODENAME")
 	parser.add_argument('-t',  '--token',				help="Instead of classical credentials, use the tokenize version", action='store_true', default=None)
 	parser.add_argument('-tu', '--token-url',			help="Use the given tokendispenser URL to retrieve a token", metavar="TOKEN_URL")
 	parser.add_argument('-ts', '--token-str',			help="Supply token string by yourself, need to supply GSF_ID at the same time", metavar="TOKEN_STR")
 	parser.add_argument('-g',  '--gsfid',				help="Supply GSF_ID by yourself, need to supply token string at the same time", metavar="GSF_ID")
 	parser.add_argument('-c',  '--config',				help="Use a different config file than gplaycli.conf", metavar="CONF_FILE", nargs=1)
-	parser.add_argument('-p',  '--progress',			help="Prompt a progress bar while downloading packages", action='store_true')
 	parser.add_argument('-L',  '--log',					help="Enable logging of apps status in separate logging files", action='store_true', default=False)
-	parser.add_argument('-C',  '--category',			help="List apps in category & subcategory", nargs=2, metavar=("CATEGORY_ID","SUBCATEGORY"))
-	parser.add_argument('-Cl', '--category-list',		help="List subcategories for category, or all categories if no category listed", nargs='?', metavar="CATEGORY_ID", const='', default=None)
 
-	if len(sys.argv) < 2:
+	subparsers = parser.add_subparsers(help='',dest="command")
+	browse = subparsers.add_parser('query',help="Querying for content")
+	browse.add_argument('-s',  '--search',				help="Search the given string in Google Play Store", metavar="SEARCH")
+	browse.add_argument('-P',  '--paid',				help="Also search for paid apps", action='store_true', default=False)
+	browse.add_argument('-l',  '--list',				help="List APKS in the given folder, with details", metavar="FOLDER")
+	browse.add_argument('-C',  '--category',			help="List apps in category & subcategory", nargs=2, metavar=("CATEGORY_ID","SUBCATEGORY"))
+	browse.add_argument('-Cl', '--category-list',		help="List subcategories for category, or all categories if no category listed", nargs='?', metavar="CATEGORY_ID", const='', default=None)
+
+	content = subparsers.add_parser('get',help="Getting content from Google Play")
+	content.add_argument('-d',  '--download',			help="Download the Apps that map given AppIDs", metavar="AppID", nargs="+")
+	content.add_argument('-av', '--append-version',		help="Append versionstring to APKs when downloading", action='store_true')
+	content.add_argument('-a',  '--additional-files',	help="Enable the download of additional files", action='store_true', default=False)
+	content.add_argument('-F',  '--file',				help="Load packages to download from file, one package per line", metavar="FILE")
+	content.add_argument('-u',  '--update',				help="Update all APKs in a given folder", metavar="FOLDER")
+	content.add_argument('-f',  '--folder',				help="Where to put the downloaded Apks, only for -d command", metavar="FOLDER", nargs=1, default=['.'])
+	content.add_argument('-p',  '--progress',			help="Prompt a progress bar while downloading packages", action='store_true')
+
+	if len(sys.argv) < 3:
 		sys.argv.append("-h")
 
 	args = parser.parse_args()
@@ -744,33 +750,34 @@ def main():
 		return
 
 	cli = GPlaycli(args, args.config)
+	if args.command == "query":
+		if args.search:
+			cli.verbose = True
+			cli.search(args.search, not args.paid)
 
-	if args.list:
-		print(util.list_folder_apks(args.list))
+		if args.category_list is not None:
+			cli.verbose = True
+			cli.list_categories(args.category_list)
+		
+		elif args.category:
+			cli.verbose = True
+			cli.list_category_apps(args.category[0],args.category[1], not args.paid)
 
-	if args.update:
-		cli.prepare_analyse_apks()
-		return
-
-	if args.search:
-		cli.verbose = True
-		cli.search(args.search, not args.paid)
-
-	if args.category_list is not None:
-		cli.verbose = True
-		cli.list_categories(args.category_list)
+		if args.list:
+			print(util.list_folder_apks(args.list))
 	
-	elif args.category:
-		cli.verbose = True
-		cli.list_category_apps(args.category[0],args.category[1], not args.paid)
+	elif args.command == "get":
+		if args.update:
+			cli.prepare_analyse_apks()
+			return
+		
+		if args.file:
+			args.download = util.load_from_file(args.file)
 
-	if args.file:
-		args.download = util.load_from_file(args.file)
-
-	if args.download is not None:
-		if args.folder is not None:
-			cli.download_folder = args.folder[0]
-		cli.download(args.download)
+		if args.download is not None:
+			if args.folder is not None:
+				cli.download_folder = args.folder[0]
+			cli.download(args.download)
 
 
 if __name__ == '__main__':
